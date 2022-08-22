@@ -30,3 +30,9 @@
 *.exe
 *.out
 *.app
+cec-lirc
+
+# Eclipse project files
+.cproject
+.project
+.settings
