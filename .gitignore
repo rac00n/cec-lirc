@@ -36,3 +36,4 @@ cec-lirc
 .cproject
 .project
 .settings
+/stdout-*

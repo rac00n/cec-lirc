@@ -1,7 +1,7 @@
 PROJECT_ROOT = $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
 
 OBJS = cec-lirc.o
-LDFLAGS = -ldl
+LDFLAGS = -ldl -llirc_client
 
 ifeq ($(BUILD_MODE),debug)
 	CFLAGS += -g

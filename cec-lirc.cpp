@@ -6,12 +6,15 @@
 
 #include "libcec/cec.h"
 #include "libcec/cecloader.h"
+#include "lirc_client.h"
 
 using namespace std;
 using namespace CEC;
 
 // The main loop will just continue until a ctrl-C is received
-bool exit_now = false;
+static bool exit_now = false;
+static int lircFd;
+
 void handle_signal(int signal)
 {
     exit_now = true;
@@ -24,12 +27,32 @@ void CECLogMessage(void *not_used, const cec_log_message* message)
 
 void CECKeyPress(void *cbParam, const cec_keypress* key)
 {
-    cout << "CECKeyPress: key " << unsigned(key->keycode) << " duration " << unsigned(key->duration) << std::endl;
+    cout << "CECKeyPress: key " << hex << unsigned(key->keycode) << " duration " << dec << unsigned(key->duration) << std::endl;
+
+    switch( key->keycode )
+     {
+         case CEC_USER_CONTROL_CODE_VOLUME_UP:
+        	 break;
+         case CEC_USER_CONTROL_CODE_VOLUME_DOWN:
+        	 break;
+         case CEC_USER_CONTROL_CODE_MUTE:
+        	 if (key->duration > 0) // key released
+        	 {
+        		 if (lirc_send_one(lircFd, "Yamaha_RAV283", "KEY_MUTE") == -1)
+        		 {
+        			 cout << "CECKeyPress: lirc_send_one KEY_MUTE failed" << endl;
+        		 }
+        	 }
+        	 break;
+         default:
+        	 break;
+     };
+
 }
 
 void CECCommand(void *cbParam, const cec_command* command)
 {
-    cout << "CECCommand: opcode " << unsigned(command->opcode) << " dest " << unsigned(command->destination) << std::endl;
+    cout << "CECCommand: opcode " << hex << unsigned(command->opcode) << " dest " << unsigned(command->destination) << std::endl;
 }
 
 void CECAlert(void *cbParam, const libcec_alert type, const libcec_parameter param)
@@ -83,7 +106,7 @@ int main (int argc, char *argv[])
   int8_t devices_found = CECAdapter->DetectAdapters(devices.data(), devices.size(), nullptr, false);
   if( devices_found <= 0)
    {
-       cerr << "Could not automatically determine the cec adapter devices\n";
+       cerr << "Could not automatically determine the cec adapter devices" << endl;
        UnloadLibCec(CECAdapter);
        return 1;
    }
@@ -93,7 +116,14 @@ int main (int argc, char *argv[])
   // Open a connection to the zeroth CEC device
    if( !CECAdapter->Open(devices[0].strComName) )
    {
-       cerr << "Failed to open the CEC device on port " << devices[0].strComName << std::endl;
+       cerr << "Failed to open the CEC device on port " << devices[0].strComName << endl;
+       UnloadLibCec(CECAdapter);
+       return 1;
+   }
+
+   lircFd = lirc_get_local_socket("/var/run/lirc/lircd-tx", 0);
+   if (lircFd < 0) {
+       cerr << "Failed to get LIRC local socket" << endl;
        UnloadLibCec(CECAdapter);
        return 1;
    }
