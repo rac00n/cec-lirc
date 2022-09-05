@@ -25,15 +25,50 @@ void CECLogMessage(void *not_used, const cec_log_message* message)
 	cout << "LOG" << message->level << " " << message->message << endl;
 }
 
+int send_packet(lirc_cmd_ctx* ctx, int fd)
+{
+        int r;
+        do {
+                r = lirc_command_run(ctx, fd);
+                if (r != 0 && r != EAGAIN)
+                        fprintf(stderr,
+                                "Error running command: %s\n", strerror(r));
+        } while (r == EAGAIN);
+        return r == 0 ? 0 : -1;
+}
+
+
 void CECKeyPress(void *cbParam, const cec_keypress* key)
 {
-    cout << "CECKeyPress: key " << hex << unsigned(key->keycode) << " duration " << dec << unsigned(key->duration) << std::endl;
+	static lirc_cmd_ctx ctx;
+
+	cout << "CECKeyPress: key " << hex << unsigned(key->keycode) << " duration " << dec << unsigned(key->duration) << std::endl;
 
     switch( key->keycode )
      {
          case CEC_USER_CONTROL_CODE_VOLUME_UP:
+        	 if (key->duration == 0) // key pressed
+        	 {
+        		 lirc_command_init(&ctx, "SEND_START Yamaha_RAV283 KEY_VOLUMEUP\n");
+        	 }
+        	 else
+        	 {
+        		 lirc_command_init(&ctx, "SEND_STOP Yamaha_RAV283 KEY_VOLUMEUP\n");
+        	 }
+    		 lirc_command_reply_to_stdout(&ctx);
+    		 send_packet(&ctx, lircFd);
         	 break;
          case CEC_USER_CONTROL_CODE_VOLUME_DOWN:
+        	 if (key->duration == 0) // key pressed
+        	 {
+        		 lirc_command_init(&ctx, "SEND_START Yamaha_RAV283 KEY_VOLUMEDOWN\n");
+        	 }
+        	 else
+        	 {
+        		 lirc_command_init(&ctx, "SEND_STOP Yamaha_RAV283 KEY_VOLUMEDOWN\n");
+        	 }
+    		 lirc_command_reply_to_stdout(&ctx);
+    		 send_packet(&ctx, lircFd);
         	 break;
          case CEC_USER_CONTROL_CODE_MUTE:
         	 if (key->duration > 0) // key released
@@ -46,13 +81,32 @@ void CECKeyPress(void *cbParam, const cec_keypress* key)
         	 break;
          default:
         	 break;
-     };
+     }
 
 }
 
 void CECCommand(void *cbParam, const cec_command* command)
 {
-    cout << "CECCommand: opcode " << hex << unsigned(command->opcode) << " dest " << unsigned(command->destination) << std::endl;
+    cout << "CECCommand: opcode " << hex << unsigned(command->opcode) << " " << unsigned(command->initiator) << " -> " <<
+    		unsigned(command->destination) << endl;
+    switch (command->opcode)
+    {
+    	case CEC_OPCODE_ACTIVE_SOURCE:
+    		break;
+    	case CEC_OPCODE_ROUTING_CHANGE:
+    		break;
+    	case CEC_OPCODE_REPORT_POWER_STATUS:
+    		if (command->parameters.data[0] ==  CEC_POWER_STATUS_STANDBY)
+    		{
+    			if (lirc_send_one(lircFd, "Yamaha_RAV283", "KEY_SUSPEND") == -1)
+    			{
+    				cout << "CECKeyPress: lirc_send_one KEY_SUSPEND failed" << endl;
+    			}
+    		}
+    		break;
+    	default:
+    		break;
+    }
 }
 
 void CECAlert(void *cbParam, const libcec_alert type, const libcec_parameter param)
