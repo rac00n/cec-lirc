@@ -27,6 +27,15 @@ cec-lirc:	$(OBJS)
 
 %.o:	$(PROJECT_ROOT)%.c
 	$(CC) -c $(CFLAGS) $(CPPFLAGS) $(INCLUDES) -o $@ $<
+	
+# PREFIX is environment variable, but if it is not set, then set default value
+ifeq ($(PREFIX),)
+    PREFIX := /usr/local
+endif
+
+install:	cec-lirc
+	install -d $(DESTDIR)$(PREFIX)/bin/
+	install -m 644 $< $(DESTDIR)$(PREFIX)/bin/
 
 clean:
 	rm -fr cec-lirc $(OBJS) $(EXTRA_CLEAN)

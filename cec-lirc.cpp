@@ -3,6 +3,10 @@
 #include <signal.h>
 #include <chrono>
 #include <thread>
+#include <ctime>
+#include <chrono>
+#include <iomanip>
+#include <argp.h>
 
 #include "libcec/cec.h"
 #include "libcec/cecloader.h"
@@ -14,6 +18,37 @@ using namespace CEC;
 // The main loop will just continue until a ctrl-C is received
 static bool exit_now = false;
 static int lircFd;
+static uint32_t logMask = (CEC_LOG_ERROR | CEC_LOG_WARNING);
+
+const char *argp_program_version =
+  "cec-lirc 1.0";
+const char *argp_program_bug_address =
+  "https://github.com/ballle98/cec-lirc";
+
+/* The options we understand. */
+static struct argp_option options[] = {
+  {"verbose",  'v', 0,      0,  "Produce verbose output" },
+  {"quiet",    'q', 0,      0,  "Don't produce any output" },
+  { 0 }
+};
+
+static error_t parse_opt (int key, char *arg, struct argp_state *state)
+{
+  switch (key)
+    {
+    case 'q':
+    	logMask = 0;
+    	break;
+    case 'v':
+    	logMask = CEC_LOG_ALL;
+    	break;
+    default:
+    	return ARGP_ERR_UNKNOWN;
+    }
+  return 0;
+}
+
+static struct argp argp = { options, parse_opt, 0, 0 };
 
 void handle_signal(int signal)
 {
@@ -22,27 +57,35 @@ void handle_signal(int signal)
 
 void CECLogMessage(void *not_used, const cec_log_message* message)
 {
-	cout << "LOG" << message->level << " " << message->message << endl;
+    auto const now = chrono::system_clock::now();
+    auto now_time = chrono::system_clock::to_time_t(now);
+    auto duration = now.time_since_epoch();
+    auto millis = chrono::duration_cast<chrono::milliseconds>(duration).count() % 1000;
+
+    if (logMask & message->level) {
+    	cout << "[" << put_time(localtime(&now_time), "%D %T") << "." <<
+    			dec << setw(4) << setfill('0') << millis << "] " <<
+				"LOG" << message->level << " " << message->message << endl;
+    }
 }
 
 int send_packet(lirc_cmd_ctx* ctx, int fd)
 {
         int r;
         do {
-                r = lirc_command_run(ctx, fd);
-                if (r != 0 && r != EAGAIN)
-                        fprintf(stderr,
-                                "Error running command: %s\n", strerror(r));
+        	r = lirc_command_run(ctx, fd);
+        	if (r != 0 && r != EAGAIN) {
+        		cerr << "send_packet lirc_command_run Error " << strerror(r) << endl;
+        	}
         } while (r == EAGAIN);
         return r == 0 ? 0 : -1;
 }
-
 
 void CECKeyPress(void *cbParam, const cec_keypress* key)
 {
 	static lirc_cmd_ctx ctx;
 
-	cout << "CECKeyPress: key " << hex << unsigned(key->keycode) << " duration " << dec << unsigned(key->duration) << std::endl;
+	(logMask & CEC_LOG_DEBUG) && cout << "CECKeyPress: key " << hex << unsigned(key->keycode) << " duration " << dec << unsigned(key->duration) << endl;
 
     switch( key->keycode )
      {
@@ -55,7 +98,9 @@ void CECKeyPress(void *cbParam, const cec_keypress* key)
         	 {
         		 lirc_command_init(&ctx, "SEND_STOP Yamaha_RAV283 KEY_VOLUMEUP\n");
         	 }
-    		 lirc_command_reply_to_stdout(&ctx);
+        	 if (logMask & CEC_LOG_DEBUG) {
+        		 lirc_command_reply_to_stdout(&ctx);
+        	 }
     		 send_packet(&ctx, lircFd);
         	 break;
          case CEC_USER_CONTROL_CODE_VOLUME_DOWN:
@@ -67,7 +112,9 @@ void CECKeyPress(void *cbParam, const cec_keypress* key)
         	 {
         		 lirc_command_init(&ctx, "SEND_STOP Yamaha_RAV283 KEY_VOLUMEDOWN\n");
         	 }
-    		 lirc_command_reply_to_stdout(&ctx);
+        	 if (logMask & CEC_LOG_DEBUG) {
+        		 lirc_command_reply_to_stdout(&ctx);
+        	 }
     		 send_packet(&ctx, lircFd);
         	 break;
          case CEC_USER_CONTROL_CODE_MUTE:
@@ -75,7 +122,7 @@ void CECKeyPress(void *cbParam, const cec_keypress* key)
         	 {
         		 if (lirc_send_one(lircFd, "Yamaha_RAV283", "KEY_MUTE") == -1)
         		 {
-        			 cout << "CECKeyPress: lirc_send_one KEY_MUTE failed" << endl;
+        			 cerr << "CECKeyPress: lirc_send_one KEY_MUTE failed" << endl;
         		 }
         	 }
         	 break;
@@ -87,8 +134,9 @@ void CECKeyPress(void *cbParam, const cec_keypress* key)
 
 void CECCommand(void *cbParam, const cec_command* command)
 {
-    cout << "CECCommand: opcode " << hex << unsigned(command->opcode) << " " << unsigned(command->initiator) << " -> " <<
-    		unsigned(command->destination) << endl;
+	(logMask & CEC_LOG_DEBUG) && cout << "CECCommand: opcode " << hex <<
+			unsigned(command->opcode) << " " << unsigned(command->initiator) <<
+			" -> " << unsigned(command->destination) << endl;
     switch (command->opcode)
     {
     	case CEC_OPCODE_ACTIVE_SOURCE:
@@ -98,9 +146,10 @@ void CECCommand(void *cbParam, const cec_command* command)
     	case CEC_OPCODE_REPORT_POWER_STATUS:
     		if (command->parameters.data[0] ==  CEC_POWER_STATUS_STANDBY)
     		{
+    			(logMask & CEC_LOG_DEBUG) && cout << "CECCommand: lirc_send_one KEY_SUSPEND" << endl;
     			if (lirc_send_one(lircFd, "Yamaha_RAV283", "KEY_SUSPEND") == -1)
     			{
-    				cout << "CECKeyPress: lirc_send_one KEY_SUSPEND failed" << endl;
+    				cerr << "CECCommand: lirc_send_one KEY_SUSPEND failed" << endl;
     			}
     		}
     		break;
@@ -127,6 +176,8 @@ int main (int argc, char *argv[])
   ICECCallbacks         CECCallbacks;
   libcec_configuration  CECConfig;
   ICECAdapter*          CECAdapter;
+
+  argp_parse (&argp, argc, argv, 0, 0, 0);
 
   // Install the ctrl-C signal handler
   if( SIG_ERR == signal(SIGINT, handle_signal) )
@@ -165,7 +216,7 @@ int main (int argc, char *argv[])
        return 1;
    }
 
-  cerr << unsigned(devices_found) << " devices found" << endl;
+  (logMask & CEC_LOG_DEBUG) && cout << unsigned(devices_found) << " devices found" << endl;
 
   // Open a connection to the zeroth CEC device
    if( !CECAdapter->Open(devices[0].strComName) )
@@ -182,13 +233,14 @@ int main (int argc, char *argv[])
        return 1;
    }
 
-   cerr << "waiting for ctl-c" << endl;
+   (logMask & CEC_LOG_DEBUG) && cout << "waiting for ctl-c" << endl;
 
   // Loop until ctrl-C occurs
   while( !exit_now )
   {
-      // nothing to do.  All happens in the CEC callback on another thread
-      this_thread::sleep_for( std::chrono::seconds(1) );
+	  // :TODO: change to a task suspend
+	  // nothing to do.  All happens in the CEC callback on another thread
+      this_thread::sleep_for( chrono::seconds(1) );
   }
 
   // Close down and cleanup
@@ -196,6 +248,8 @@ int main (int argc, char *argv[])
 
   CECAdapter->Close();
   UnloadLibCec(CECAdapter);
+
+  // :TODO: lirc cleanup
 
   return 0;
 }
