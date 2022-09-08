@@ -1,0 +1,11 @@
+[Unit]
+Description=cec-lirc HDMI CEC to IR remote bridge
+After=lircd-tx.service
+Wants=lircd-tx.socket
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/cec-lirc
+
+[Install]
+WantedBy=multi-user.target

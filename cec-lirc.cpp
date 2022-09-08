@@ -19,6 +19,7 @@ using namespace CEC;
 static bool exit_now = false;
 static int lircFd;
 static uint32_t logMask = (CEC_LOG_ERROR | CEC_LOG_WARNING);
+static ICECAdapter* CECAdapter;
 
 const char *argp_program_version =
   "cec-lirc 1.0";
@@ -139,9 +140,19 @@ void CECCommand(void *cbParam, const cec_command* command)
 			" -> " << unsigned(command->destination) << endl;
     switch (command->opcode)
     {
-    	case CEC_OPCODE_ACTIVE_SOURCE:
+    	case CEC_OPCODE_USER_CONTROL_PRESSED:
     		break;
-    	case CEC_OPCODE_ROUTING_CHANGE:
+    	case CEC_OPCODE_USER_CONTROL_RELEASE:
+    		break;
+    	case CEC_OPCODE_ACTIVE_SOURCE: //0x82
+			(logMask & CEC_LOG_DEBUG) && cout << "CECCommand: lirc_send_one KEY_POWER" << endl;
+			if (lirc_send_one(lircFd, "Yamaha_RAV283", "KEY_POWER") == -1)
+			{
+				cerr << "CECCommand: lirc_send_one KEY_POWER failed" << endl;
+			}
+			CECAdapter->AudioEnable(true);
+    		break;
+    	case CEC_OPCODE_ROUTING_CHANGE: //0x80
     		break;
     	case CEC_OPCODE_REPORT_POWER_STATUS:
     		if (command->parameters.data[0] ==  CEC_POWER_STATUS_STANDBY)
@@ -151,6 +162,8 @@ void CECCommand(void *cbParam, const cec_command* command)
     			{
     				cerr << "CECCommand: lirc_send_one KEY_SUSPEND failed" << endl;
     			}
+    			// :TODO: CCECAudioSystem::SetSystemAudioModeStatus
+    			CECAdapter->AudioEnable(false);
     		}
     		break;
     	default:
@@ -175,7 +188,6 @@ int main (int argc, char *argv[])
 {
   ICECCallbacks         CECCallbacks;
   libcec_configuration  CECConfig;
-  ICECAdapter*          CECAdapter;
 
   argp_parse (&argp, argc, argv, 0, 0, 0);
 
@@ -197,8 +209,8 @@ int main (int argc, char *argv[])
   CECCallbacks.alert           = &CECAlert;
   CECConfig.callbacks          = &CECCallbacks;
 
-  // CECConfig.deviceTypes.Add(CEC_DEVICE_TYPE_TUNER);
   CECConfig.deviceTypes.Add(CEC_DEVICE_TYPE_AUDIO_SYSTEM);
+  CECConfig.deviceTypes.Add(CEC_DEVICE_TYPE_TUNER);
 
   if (! (CECAdapter = LibCecInitialise(&CECConfig)) )
   {
