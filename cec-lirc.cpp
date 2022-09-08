@@ -17,7 +17,7 @@ using namespace CEC;
 
 // The main loop will just continue until a ctrl-C is received
 static bool exit_now = false;
-static int lircFd;
+static int lircFd = -1;
 static uint32_t logMask = (CEC_LOG_ERROR | CEC_LOG_WARNING);
 static ICECAdapter* CECAdapter;
 
@@ -133,6 +133,27 @@ void CECKeyPress(void *cbParam, const cec_keypress* key)
 
 }
 
+void turnAudioOn()
+{
+	(logMask & CEC_LOG_DEBUG) && cout << "CECCommand: lirc_send_one KEY_POWER" << endl;
+	if (lirc_send_one(lircFd, "Yamaha_RAV283", "KEY_POWER") == -1)
+	{
+		cerr << "CECCommand: lirc_send_one KEY_POWER failed" << endl;
+	}
+	CECAdapter->AudioEnable(true);
+}
+
+void turnAudioOff()
+{
+	(logMask & CEC_LOG_DEBUG) && cout << "CECCommand: lirc_send_one KEY_SUSPEND" << endl;
+	if (lirc_send_one(lircFd, "Yamaha_RAV283", "KEY_SUSPEND") == -1)
+	{
+		cerr << "CECCommand: lirc_send_one KEY_SUSPEND failed" << endl;
+	}
+	// :TODO: CCECAudioSystem::SetSystemAudioModeStatus
+	CECAdapter->AudioEnable(false);
+}
+
 void CECCommand(void *cbParam, const cec_command* command)
 {
 	(logMask & CEC_LOG_DEBUG) && cout << "CECCommand: opcode " << hex <<
@@ -140,30 +161,36 @@ void CECCommand(void *cbParam, const cec_command* command)
 			" -> " << unsigned(command->destination) << endl;
     switch (command->opcode)
     {
-    	case CEC_OPCODE_USER_CONTROL_PRESSED:
+    	case CEC_OPCODE_STANDBY: //0x36 0f:36
+    		turnAudioOff();
     		break;
-    	case CEC_OPCODE_USER_CONTROL_RELEASE:
+    	case CEC_OPCODE_USER_CONTROL_PRESSED: // 0x44
     		break;
-    	case CEC_OPCODE_ACTIVE_SOURCE: //0x82
-			(logMask & CEC_LOG_DEBUG) && cout << "CECCommand: lirc_send_one KEY_POWER" << endl;
-			if (lirc_send_one(lircFd, "Yamaha_RAV283", "KEY_POWER") == -1)
-			{
-				cerr << "CECCommand: lirc_send_one KEY_POWER failed" << endl;
-			}
-			CECAdapter->AudioEnable(true);
+    	case CEC_OPCODE_USER_CONTROL_RELEASE: // 0x45
     		break;
-    	case CEC_OPCODE_ROUTING_CHANGE: //0x80
+    	case CEC_OPCODE_SYSTEM_AUDIO_MODE_REQUEST: // 0x70  05:70:00:00
+    		// From https://www.hdmi.org/docs/Hdmi13aSpecs
+    		//
+    		// The amplifier comes out of standby (if necessary) and switches to the
+    		// relevant connector for device specified by [Physical Address]. It then
+    		// sends a <Set System Audio Mode> [On] message.
+    		//
+    		// <System Audio Mode Request> sent without a [Physical Address]
+    		// parameter requests termination of the feature. In this case, the
+    		// amplifier sends a <Set System Audio Mode> [Off] message.
+    		turnAudioOn();
+    		// libCEC should return 50:72:01 (on) or 50:72:00 (off)
     		break;
-    	case CEC_OPCODE_REPORT_POWER_STATUS:
+    	case CEC_OPCODE_SYSTEM_AUDIO_MODE_STATUS: // 0x7E
+    		break;
+    	case CEC_OPCODE_ROUTING_CHANGE: // 0x80
+    		break;
+    	case CEC_OPCODE_ACTIVE_SOURCE: // 0x82
+    		break;
+    	case CEC_OPCODE_REPORT_POWER_STATUS: // 0x90
     		if (command->parameters.data[0] ==  CEC_POWER_STATUS_STANDBY)
     		{
-    			(logMask & CEC_LOG_DEBUG) && cout << "CECCommand: lirc_send_one KEY_SUSPEND" << endl;
-    			if (lirc_send_one(lircFd, "Yamaha_RAV283", "KEY_SUSPEND") == -1)
-    			{
-    				cerr << "CECCommand: lirc_send_one KEY_SUSPEND failed" << endl;
-    			}
-    			// :TODO: CCECAudioSystem::SetSystemAudioModeStatus
-    			CECAdapter->AudioEnable(false);
+    			turnAudioOff();
     		}
     		break;
     	default:
@@ -198,10 +225,20 @@ int main (int argc, char *argv[])
       return 1;
   }
 
+  lircFd = lirc_get_local_socket("/var/run/lirc/lircd-tx", 0);
+  if (lircFd < 0) {
+      cerr << "Failed to get LIRC local socket" << endl;
+      UnloadLibCec(CECAdapter);
+      return 1;
+  }
+
+  (logMask & CEC_LOG_DEBUG) && cout << "lirc_get_local_socket " << lircFd << endl;
+
+
   CECConfig.Clear();
   CECCallbacks.Clear();
   snprintf(CECConfig.strDeviceName, LIBCEC_OSD_NAME_SIZE, "CECtoIR");
-  CECConfig.clientVersion      = LIBCEC_VERSION_CURRENT;
+  CECConfig.clientVersion      = LIBCEC_VERSION_TO_UINT(4, 0, 0);  // 1.3
   CECConfig.bActivateSource    = 0;
   CECCallbacks.logMessage      = &CECLogMessage;
   CECCallbacks.keyPress        = &CECKeyPress;
@@ -210,7 +247,7 @@ int main (int argc, char *argv[])
   CECConfig.callbacks          = &CECCallbacks;
 
   CECConfig.deviceTypes.Add(CEC_DEVICE_TYPE_AUDIO_SYSTEM);
-  CECConfig.deviceTypes.Add(CEC_DEVICE_TYPE_TUNER);
+//  CECConfig.deviceTypes.Add(CEC_DEVICE_TYPE_TUNER);
 
   if (! (CECAdapter = LibCecInitialise(&CECConfig)) )
   {
@@ -234,13 +271,6 @@ int main (int argc, char *argv[])
    if( !CECAdapter->Open(devices[0].strComName) )
    {
        cerr << "Failed to open the CEC device on port " << devices[0].strComName << endl;
-       UnloadLibCec(CECAdapter);
-       return 1;
-   }
-
-   lircFd = lirc_get_local_socket("/var/run/lirc/lircd-tx", 0);
-   if (lircFd < 0) {
-       cerr << "Failed to get LIRC local socket" << endl;
        UnloadLibCec(CECAdapter);
        return 1;
    }
