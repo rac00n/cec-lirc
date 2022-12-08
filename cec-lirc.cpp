@@ -27,6 +27,8 @@ const char *argp_program_bug_address = "https://github.com/ballle98/cec-lirc";
 // lirc device config
 const char *lirc_device_name = "DDTS-100";
 
+bool mute = false;
+
 /* The options we understand. */
 static struct argp_option options[] = { { "verbose", 'v', 0, 0,
     "Produce verbose output" },
@@ -110,14 +112,15 @@ if(key->duration > 0) {
   switch (key->keycode) {
   case CEC_USER_CONTROL_CODE_POWER:
     turnAudioOff();
-  // TV (Sony Bravia) stops sending CEC cmds when volume level reached 0 or 100
-  // since there is no feedback from the audio system we need a fake state as a workaround
+  // WIP: TV (Sony Bravia) stops sending CEC cmds when volume level reached 0 or 100
+  // since there is no feedback from the audio system we need a fake state as workaround
   case CEC_USER_CONTROL_CODE_VOLUME_UP:
       lircCmd = "KEY_VOLUMEUP";
       lircRes = lirc_send_one(lircFd, lirc_device_name, lircCmd);
       // fake vol level 16 as vol up feedback
       // TODO report audio status, libcec only reports unknown to TV
       CECAdapter->Transmit(CECAdapter->CommandFromString("50:7A:10"));
+      mute = false;
       break;
   case CEC_USER_CONTROL_CODE_VOLUME_DOWN:
       lircCmd = "KEY_VOLUMEDOWN";
@@ -125,11 +128,21 @@ if(key->duration > 0) {
       // fake vol level 8 as vol down feedback
       // TODO report audio status, libcec only reports unknown to TV
       CECAdapter->Transmit(CECAdapter->CommandFromString("50:7A:08"));
+      mute = false;
       break;
   case CEC_USER_CONTROL_CODE_MUTE:
       lircCmd = "KEY_MUTE";
       lircRes = lirc_send_one(lircFd, lirc_device_name, lircCmd);
-      // TODO report audio status, libcec only reports unknown to TV
+      // toggle mute status
+      mute = !mute;
+      cout << "MUTED: " << mute << endl;
+      if (mute) {
+        // fake vol level to wake tv from mute status
+        CECAdapter->Transmit(CECAdapter->CommandFromString("50:7A:0A"));
+      } else {
+        // vol status > x80 is mute + vol level
+        CECAdapter->Transmit(CECAdapter->CommandFromString("50:7A:80"));
+      }
       break;
   case CEC_USER_CONTROL_CODE_F2_RED:
       lircCmd = "KEY_POWER";
