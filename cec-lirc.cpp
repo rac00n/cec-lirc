@@ -24,6 +24,9 @@ static ICECAdapter *CECAdapter;
 const char *argp_program_version = "cec-lirc 1.0";
 const char *argp_program_bug_address = "https://github.com/ballle98/cec-lirc";
 
+// lirc device config
+const char *lirc_device_name = "DDTS-100";
+
 /* The options we understand. */
 static struct argp_option options[] = { { "verbose", 'v', 0, 0,
     "Produce verbose output" },
@@ -74,69 +77,63 @@ int send_packet(lirc_cmd_ctx *ctx, int fd) {
   return r == 0 ? 0 : -1;
 }
 
-void CECKeyPress(void *cbParam, const cec_keypress *key) {
-  static lirc_cmd_ctx ctx;
-
-  (logMask & CEC_LOG_DEBUG)
-      && cout << "CECKeyPress: key " << hex << unsigned(key->keycode)
-          << " duration " << dec << unsigned(key->duration) << endl;
-
-  switch (key->keycode) {
-  case CEC_USER_CONTROL_CODE_VOLUME_UP:
-    if (key->duration == 0) // key pressed
-        {
-      lirc_command_init(&ctx, "SEND_START Yamaha_RAV283 KEY_VOLUMEUP\n");
-    } else {
-      lirc_command_init(&ctx, "SEND_STOP Yamaha_RAV283 KEY_VOLUMEUP\n");
-    }
-    if (logMask & CEC_LOG_DEBUG) {
-      lirc_command_reply_to_stdout(&ctx);
-    }
-    send_packet(&ctx, lircFd);
-    break;
-  case CEC_USER_CONTROL_CODE_VOLUME_DOWN:
-    if (key->duration == 0) // key pressed
-        {
-      lirc_command_init(&ctx, "SEND_START Yamaha_RAV283 KEY_VOLUMEDOWN\n");
-    } else {
-      lirc_command_init(&ctx, "SEND_STOP Yamaha_RAV283 KEY_VOLUMEDOWN\n");
-    }
-    if (logMask & CEC_LOG_DEBUG) {
-      lirc_command_reply_to_stdout(&ctx);
-    }
-    send_packet(&ctx, lircFd);
-    break;
-  case CEC_USER_CONTROL_CODE_MUTE:
-    if (key->duration > 0) // key released
-        {
-      if (lirc_send_one(lircFd, "Yamaha_RAV283", "KEY_MUTE") == -1) {
-        cerr << "CECKeyPress: lirc_send_one KEY_MUTE failed" << endl;
-      }
-    }
-    break;
-  default:
-    break;
-  }
-
-}
-
 void turnAudioOn() {
-  (logMask & CEC_LOG_DEBUG)
-      && cout << "CECCommand: lirc_send_one KEY_POWER" << endl;
-  if (lirc_send_one(lircFd, "Yamaha_RAV283", "KEY_POWER") == -1) {
+  (logMask)
+      && cout << "CECCommand: Audio system on" << endl;
+  if (lirc_send_one(lircFd, lirc_device_name, "KEY_POWER") == -1) {
     cerr << "CECCommand: lirc_send_one KEY_POWER failed" << endl;
   }
   CECAdapter->AudioEnable(true);
 }
 
 void turnAudioOff() {
-  (logMask & CEC_LOG_DEBUG)
-      && cout << "CECCommand: lirc_send_one KEY_SUSPEND" << endl;
-  if (lirc_send_one(lircFd, "Yamaha_RAV283", "KEY_SUSPEND") == -1) {
+  (logMask)
+      && cout << "CECCommand: Audio system off" << endl;
+  if (lirc_send_one(lircFd, lirc_device_name, "KEY_POWER") == -1) { //TODO unfortunately there is no suspend key on creative remote, we need some kind of virtual state to keep track of volume and power status
     cerr << "CECCommand: lirc_send_one KEY_SUSPEND failed" << endl;
   }
   // :TODO: CCECAudioSystem::SetSystemAudioModeStatus
   CECAdapter->AudioEnable(false);
+}
+
+void CECKeyPress(void *cbParam, const cec_keypress *key) {
+  static lirc_cmd_ctx ctx;
+
+  auto lircCmd = "";
+  int lircRes = 0;
+
+  (logMask & CEC_LOG_DEBUG)
+      && cout << "CECKeyPress: key " << hex << unsigned(key->keycode)
+          << " duration " << dec << unsigned(key->duration) << endl;
+
+if(key->duration > 0) {
+  switch (key->keycode) {
+  case CEC_USER_CONTROL_CODE_POWER:
+    turnAudioOff();  
+  case CEC_USER_CONTROL_CODE_VOLUME_UP:
+      lircCmd = "KEY_VOLUMEUP";
+      lircRes = lirc_send_one(lircFd, lirc_device_name, lircCmd);
+      // TODO report audio status, libcec only reports unknown to TV
+      break;
+  case CEC_USER_CONTROL_CODE_VOLUME_DOWN:
+      lircCmd = "KEY_VOLUMEDOWN";
+      lircRes = lirc_send_one(lircFd, lirc_device_name, lircCmd);
+      // TODO report audio status, libcec only reports unknown to TV
+    break;
+  case CEC_USER_CONTROL_CODE_MUTE:
+      lircCmd = "KEY_MUTE";
+      lircRes = lirc_send_one(lircFd, lirc_device_name, lircCmd);
+      // TODO report audio status, libcec only reports unknown to TV
+      break;
+    break;
+  default:
+    break;
+  }
+
+ if (lircRes) {
+   cerr << "CECKeyPress: lirc_send_one " << lircCmd << " failed" << endl;
+}
+  }
 }
 
 void CECCommand(void *cbParam, const cec_command *command) {
@@ -220,7 +217,7 @@ int main(int argc, char *argv[]) {
 
   CECConfig.Clear();
   CECCallbacks.Clear();
-  snprintf(CECConfig.strDeviceName, LIBCEC_OSD_NAME_SIZE, "CECtoIR");
+  snprintf(CECConfig.strDeviceName, LIBCEC_OSD_NAME_SIZE, "Creative 5.1"); /* TODO make it customizable with param? CECtoIR");*/
   CECConfig.clientVersion = LIBCEC_VERSION_CURRENT;
   CECConfig.cecVersion = CEC_VERSION_1_3A;
   CECConfig.bActivateSource = 0;
