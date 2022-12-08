@@ -137,7 +137,7 @@ if(key->duration > 0) {
 }
 
 void CECCommand(void *cbParam, const cec_command *command) {
-  (logMask & CEC_LOG_DEBUG)
+  (logMask)
       && cout << "CECCommand: opcode " << hex << unsigned(command->opcode)
           << " " << unsigned(command->initiator) << " -> "
           << unsigned(command->destination) << endl;
@@ -276,6 +276,10 @@ int main(int argc, char *argv[]) {
     // nothing to do.  All happens in the CEC callback on another thread
     this_thread::sleep_for(chrono::seconds(1));
   }
+
+  // Turn off audio system
+  cerr << "Turning off audio system..." << endl;
+  turnAudioOff();
 
   // Close down and cleanup
   cerr << "Close and cleanup" << endl;
