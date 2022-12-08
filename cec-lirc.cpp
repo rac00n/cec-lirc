@@ -125,6 +125,21 @@ if(key->duration > 0) {
       lircRes = lirc_send_one(lircFd, lirc_device_name, lircCmd);
       // TODO report audio status, libcec only reports unknown to TV
       break;
+  case CEC_USER_CONTROL_CODE_F2_RED:
+      lircCmd = "KEY_POWER";
+      lircRes = lirc_send_one(lircFd, lirc_device_name, lircCmd);
+      break;
+  case CEC_USER_CONTROL_CODE_F3_GREEN:
+      lircCmd = "dolby_digital_ex";
+      lircRes = lirc_send_one(lircFd, lirc_device_name, lircCmd);
+      break;
+  case CEC_USER_CONTROL_CODE_F4_YELLOW:
+      lircCmd = "stereo";
+      lircRes = lirc_send_one(lircFd, lirc_device_name, lircCmd);
+      break;
+  case CEC_USER_CONTROL_CODE_F1_BLUE:
+      lircCmd = "dolby_pl_ii";
+      lircRes = lirc_send_one(lircFd, lirc_device_name, lircCmd);
     break;
   default:
     break;
