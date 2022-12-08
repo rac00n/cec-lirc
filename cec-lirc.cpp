@@ -109,17 +109,23 @@ void CECKeyPress(void *cbParam, const cec_keypress *key) {
 if(key->duration > 0) {
   switch (key->keycode) {
   case CEC_USER_CONTROL_CODE_POWER:
-    turnAudioOff();  
+    turnAudioOff();
+  // TV (Sony Bravia) stops sending CEC cmds when volume level reached 0 or 100
+  // since there is no feedback from the audio system we need a fake state as a workaround
   case CEC_USER_CONTROL_CODE_VOLUME_UP:
       lircCmd = "KEY_VOLUMEUP";
       lircRes = lirc_send_one(lircFd, lirc_device_name, lircCmd);
+      // fake vol level 16 as vol up feedback
       // TODO report audio status, libcec only reports unknown to TV
+      CECAdapter->Transmit(CECAdapter->CommandFromString("50:7A:10"));
       break;
   case CEC_USER_CONTROL_CODE_VOLUME_DOWN:
       lircCmd = "KEY_VOLUMEDOWN";
       lircRes = lirc_send_one(lircFd, lirc_device_name, lircCmd);
+      // fake vol level 8 as vol down feedback
       // TODO report audio status, libcec only reports unknown to TV
-    break;
+      CECAdapter->Transmit(CECAdapter->CommandFromString("50:7A:08"));
+      break;
   case CEC_USER_CONTROL_CODE_MUTE:
       lircCmd = "KEY_MUTE";
       lircRes = lirc_send_one(lircFd, lirc_device_name, lircCmd);
@@ -306,4 +312,3 @@ int main(int argc, char *argv[]) {
 
   return 0;
 }
-
